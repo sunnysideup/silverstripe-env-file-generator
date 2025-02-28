@@ -15,20 +15,20 @@ class EnvFileGenerator
 
     private const VARIABLES = [
         // Basics
-        'BasicAuthUser',
-        'BasicAuthPassword',
         'WebsiteURL',
+        'Branch',
         'DBServer',
         'DBName',
         'DBUser',
         'DBPassword',
-        'Branch',
-        'FIAPingURL',
-        'MFASecretKey',
-        'SessionKey',
-        'SendAllEmailsTo',
+        'BasicAuthUser',
+        'BasicAuthPassword',
         'AdminUser',
         'AdminPassword',
+        'FIAPingURL',
+        'SessionKey',
+        'SendAllEmailsTo',
+        'MFASecretKey',
     ];
 
     public static function OutputExampleFile(?string $filePath = '.env.yml')
@@ -48,6 +48,7 @@ class EnvFileGenerator
         $envVariables = self::loadEnv($filePath);
 
         $template = <<<EOT
+
 # Basics
 SS_BASE_URL="\$WebsiteURL"
 SS_ENVIRONMENT_TYPE="test"
@@ -83,6 +84,7 @@ SS_SESSION_KEY="\$SessionKey"
 
 # Email
 SS_SEND_ALL_EMAILS_TO="\$SendAllEmailsTo"
+
 
 EOT;
         foreach ($envVariables as $key => $value) {
