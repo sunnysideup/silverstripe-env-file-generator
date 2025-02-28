@@ -2,6 +2,8 @@
 
 namespace Sunnysideup\EnvFileGenerator;
 
+use RuntimeException;
+
 class EnvFileGenerator
 {
 
@@ -34,6 +36,8 @@ class EnvFileGenerator
 
         // Load environment variables from .env
         $envVariables = self::loadEnv($filePath);
+        print_r($filePath);
+        print_r($envVariables);
 
         $template = <<<EOT
 # Basics
@@ -84,22 +88,41 @@ EOT;
 
 
     }
-    // Function to load .env file into an associative array
+    /**
+     * Load environment variables from a .env file into an associative array.
+     *
+     * @param string $filePath The path to the .env file.
+     * @return array The loaded environment variables.
+     * @throws RuntimeException If the file is missing or unreadable.
+     */
     protected static function loadEnv(string $filePath): array
     {
-        if (!file_exists($filePath)) {
-            die("Error: .env file not found.\n");
+        if (!file_exists($filePath) || !is_readable($filePath)) {
+            throw new RuntimeException("Error: .env file not found or not readable at {$filePath}.");
         }
 
         $variables = [];
         $lines = file($filePath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
 
         foreach ($lines as $line) {
-            if (str_starts_with(trim($line), '#')) {
-                continue; // Skip comments
+            $line = trim($line);
+
+            // Skip empty lines and comments
+            if ($line === '' || str_starts_with($line, '#')) {
+                continue;
             }
-            [$key, $value] = explode('=', $line, 2);
-            $variables[trim($key)] = trim($value);
+
+            // Match key=value, supporting quotes
+            if (preg_match('/^([\w.]+)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|(.+))$/', $line, $matches)) {
+                $key = trim($matches[1]);
+                $value = $matches[2] ?? $matches[3] ?? $matches[4] ?? '';
+
+                // Store in array
+                $variables[$key] = trim($value);
+            } else {
+                // Handle malformed lines gracefully
+                echo "Warning: Skipping malformed line in .env file: {$line}\n";
+            }
         }
 
         return $variables;

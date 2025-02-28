@@ -10,7 +10,9 @@
         "developers"
     ],
     "license": "BSD-3-Clause",
-    "require": {},
+    "require": {
+        "mustangostang/spyc": "*"
+    },
     "require-dev": {},
     "autoload": {
         "psr-4": {
