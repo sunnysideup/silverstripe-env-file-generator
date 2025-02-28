@@ -3,6 +3,7 @@
 namespace Sunnysideup\EnvFileGenerator;
 
 use RuntimeException;
+use Spyc;
 
 class EnvFileGenerator
 {
@@ -97,34 +98,6 @@ EOT;
      */
     protected static function loadEnv(string $filePath): array
     {
-        if (!file_exists($filePath) || !is_readable($filePath)) {
-            throw new RuntimeException("Error: .env file not found or not readable at {$filePath}.");
-        }
-
-        $variables = [];
-        $lines = file($filePath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-
-        foreach ($lines as $line) {
-            $line = trim($line);
-
-            // Skip empty lines and comments
-            if ($line === '' || str_starts_with($line, '#')) {
-                continue;
-            }
-
-            // Match key=value, supporting quotes
-            if (preg_match('/^([\w.]+)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|(.+))$/', $line, $matches)) {
-                $key = trim($matches[1]);
-                $value = $matches[2] ?? $matches[3] ?? $matches[4] ?? '';
-
-                // Store in array
-                $variables[$key] = trim($value);
-            } else {
-                // Handle malformed lines gracefully
-                echo "Warning: Skipping malformed line in .env file: {$line}\n";
-            }
-        }
-
-        return $variables;
+        return Spyc::YAMLLoad($filePath);
     }
 }
