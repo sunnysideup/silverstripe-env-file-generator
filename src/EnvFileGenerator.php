@@ -53,6 +53,7 @@ class EnvFileGenerator
 SS_BASE_URL="\$WebsiteURL"
 SS_ENVIRONMENT_TYPE="test"
 SS_HOSTED_WITH_SITEHOST=true
+# SS_ALLOWED_HOSTS="add your domain here, e.g. www.mydomain.com"
 
 # Paths
 TEMP_PATH="/container/application/tmp"
@@ -74,6 +75,12 @@ SS_DEFAULT_ADMIN_USERNAME="\$AdminUser"
 SS_DEFAULT_ADMIN_PASSWORD="\$AdminPassword"
 BYPASS_MFA=\$BYPASS_MFA
 
+
+# Debug and Development
+# SS_ERROR_LOG="./silverstripe.log
+# SS_SERVER_FOR_EXAMPLE_DATA="great for dev environments"
+# SS_ALLOW_SMOKE_TEST=true
+
 # Release
 SS_RELEASE_BRANCH="\$Branch"
 FIA_RELEASE_PING_URL="\$FIAPingURL"
@@ -84,6 +91,10 @@ SS_SESSION_KEY="\$SessionKey"
 
 # Email
 SS_SEND_ALL_EMAILS_TO="\$SendAllEmailsTo"
+
+# Branding
+SS_WHITE_LABEL_ONLY=true
+
 
 
 EOT;
@@ -100,7 +111,7 @@ EOT;
         // Output result
         echo $result;
 
-        // Optional: Write to
+        // Optional: Write to file
 
 
     }
@@ -113,7 +124,6 @@ EOT;
      */
     protected static function loadEnv(string $filePath): array
     {
-
         $data = Spyc::YAMLLoad($filePath);
         return $data;
     }
