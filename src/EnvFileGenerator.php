@@ -25,6 +25,7 @@ class EnvFileGenerator
         'SendAllEmailsTo',
         'MFASecretKey',
         'BYPASS_MFA',
+        'EnvironmentType',
     ];
 
     /**
@@ -77,7 +78,7 @@ class EnvFileGenerator
     public static function buildEnvFile(
         ?string $yamlFilePath = '.env.yml',
         ?string $envFilePath = '.env',
-        ?string $outputEnvFilePath = null
+        ?string $outputEnvFilePath = '.env'
     ): string {
         self::init();
 
@@ -150,8 +151,8 @@ class EnvFileGenerator
 
 # Basics
 SS_BASE_URL="$WebsiteURL"
-SS_ENVIRONMENT_TYPE="test"
-SS_HOSTED_WITH_SITEHOST=true
+SS_ENVIRONMENT_TYPE="$EnvironmentType"
+SS_HOSTED_WITH_SITEHOST=false
 # SS_ALLOWED_HOSTS="add your domain here, e.g. www.mydomain.com"
 
 # Paths
