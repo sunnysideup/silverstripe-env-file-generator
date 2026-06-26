@@ -46,6 +46,7 @@ class EnvFileGenerator
         'SS_SESSION_KEY' => 'SessionKey',
         'SS_MFA_SECRET_KEY' => 'MFASecretKey',
         'SS_SEND_ALL_EMAILS_TO' => 'SendAllEmailsTo',
+        'SS_ALLOWED_HOSTS' => 'DomainName',
         'BYPASS_MFA' => 'BYPASS_MFA',
     ];
 
@@ -62,7 +63,7 @@ class EnvFileGenerator
         $content = '';
 
         foreach (self::YAML_VARIABLES as $variable) {
-            $content .= $variable . ': \'foobar\'' . PHP_EOL;
+            $content .= $variable . ': ' . self::exampleValueFor($variable) . PHP_EOL;
         }
 
         file_put_contents($targetPath, $content);
@@ -72,8 +73,10 @@ class EnvFileGenerator
      * Build final .env based on template format/order.
      *
      * Rules:
-     * - If .env exists: keep all values from .env, reorder to template format, append unknown keys.
+     * - If .env exists: keep all *real* values from .env, reorder to template format, append unknown keys.
      * - If .env does not exist: use .env.yml values to fill template placeholders.
+     * - Any existing .env value that is still an unresolved placeholder (e.g. "$WebsiteURL")
+     *   is ignored so a previously broken .env cannot keep re-injecting placeholders.
      */
     public static function buildEnvFile(
         ?string $yamlFilePath = '.env.yml',
@@ -108,6 +111,9 @@ class EnvFileGenerator
             }
         }
 
+        // Derive DomainName from WebsiteURL when it is not supplied explicitly.
+        $templateVariables['DomainName'] = self::resolveDomainName($templateVariables);
+
         $template = self::getTemplate();
 
         $rendered = (string) preg_replace_callback(
@@ -124,7 +130,8 @@ class EnvFileGenerator
             $template
         );
 
-        // Force ALL existing .env values to win for any matching key already present in the rendered template
+        // Force existing .env values to win for any matching key already present in the rendered
+        // template - but only for real values, never for unresolved placeholders.
         $rendered = self::replaceTemplateValuesWithExistingEnvValues($rendered, $existingEnvVariables);
 
         $extraEnvVariables = self::findExtraEnvVariablesNotInRenderedTemplate($existingEnvVariables, $rendered);
@@ -152,6 +159,7 @@ class EnvFileGenerator
 # Basics
 SS_BASE_URL="$WebsiteURL"
 SS_ENVIRONMENT_TYPE="$EnvironmentType"
+SS_ALLOWED_HOSTS="$DomainName"
 SS_HOSTED_WITH_SITEHOST=false
 # SS_ALLOWED_HOSTS="add your domain here, e.g. www.mydomain.com"
 
@@ -200,6 +208,76 @@ EOT;
     }
 
     /**
+     * Example value used when generating the .env.yml stub.
+     * Secret keys default to RANDOM so they are auto-generated on build.
+     */
+    protected static function exampleValueFor(string $variable): string
+    {
+        $randomByDefault = [
+            'SessionKey' => true,
+            'MFASecretKey' => true,
+        ];
+
+        if (isset($randomByDefault[$variable])) {
+            return "'RANDOM'";
+        }
+
+        return "'foobar'";
+    }
+
+    /**
+     * Resolve the DomainName placeholder.
+     *
+     * Priority:
+     *  1. An explicit, real DomainName supplied via yaml / existing .env.
+     *  2. Derived from WebsiteURL (scheme, path, query, port stripped).
+     *
+     * @param array<string, string> $templateVariables
+     */
+    protected static function resolveDomainName(array $templateVariables): string
+    {
+        $existing = (string) ($templateVariables['DomainName'] ?? '');
+        if ($existing !== '' && !self::isUnresolvedPlaceholder($existing)) {
+            return $existing;
+        }
+
+        $websiteUrl = (string) ($templateVariables['WebsiteURL'] ?? '');
+        if ($websiteUrl === '' || self::isUnresolvedPlaceholder($websiteUrl)) {
+            return $existing;
+        }
+
+        return self::deriveDomainNameFromUrl($websiteUrl);
+    }
+
+    /**
+     * Turn a website URL into a bare host name, e.g.
+     *  https://www.example.com/path?x=1  ->  www.example.com
+     *  example.com:8080                   ->  example.com
+     */
+    protected static function deriveDomainNameFromUrl(string $websiteUrl): string
+    {
+        $websiteUrl = trim($websiteUrl);
+        if ($websiteUrl === '') {
+            return '';
+        }
+
+        // parse_url needs a scheme (or //) to recognise the host reliably.
+        $hasScheme = preg_match('#^[a-zA-Z][a-zA-Z0-9+.\-]*://#', $websiteUrl) === 1;
+        $toParse = $hasScheme ? $websiteUrl : '//' . ltrim($websiteUrl, '/');
+
+        $host = parse_url($toParse, PHP_URL_HOST);
+
+        if (!is_string($host) || $host === '') {
+            // Fallback: strip scheme, then anything from the first / ? or # and any port.
+            $host = (string) preg_replace('#^[a-zA-Z][a-zA-Z0-9+.\-]*://#', '', $websiteUrl);
+            $host = (string) preg_replace('#[/?#].*$#', '', $host);
+            $host = (string) preg_replace('#:\d+$#', '', $host);
+        }
+
+        return trim((string) $host);
+    }
+
+    /**
      * @return array<string, string>
      */
     protected static function loadYamlEnv(string $filePath): array
@@ -231,6 +309,9 @@ EOT;
 
     /**
      * Parse KEY=value lines from an existing .env file.
+     *
+     * Unresolved placeholders (e.g. SS_BASE_URL="$WebsiteURL") are dropped so a
+     * previously broken .env cannot keep overriding freshly substituted values.
      *
      * @return array<string, string>
      */
@@ -271,7 +352,14 @@ EOT;
                 continue;
             }
 
-            $result[$key] = self::stripWrappingQuotes($value);
+            $value = self::stripWrappingQuotes($value);
+
+            // Ignore values that are still unresolved template placeholders.
+            if (self::isUnresolvedPlaceholder($value)) {
+                continue;
+            }
+
+            $result[$key] = $value;
         }
 
         return $result;
@@ -325,7 +413,14 @@ EOT;
                 continue;
             }
 
-            $lines[$index] = self::formatEnvLine($key, $existingEnvVariables[$key]);
+            $value = $existingEnvVariables[$key];
+
+            // Never re-inject an unresolved placeholder over a freshly substituted value.
+            if (self::isUnresolvedPlaceholder($value)) {
+                continue;
+            }
+
+            $lines[$index] = self::formatEnvLine($key, $value);
         }
 
         return implode(PHP_EOL, $lines);
@@ -343,6 +438,10 @@ EOT;
         $extraVariables = [];
 
         foreach ($envVariables as $key => $value) {
+            if (self::isUnresolvedPlaceholder($value)) {
+                continue;
+            }
+
             if (!array_key_exists($key, $renderedKeys)) {
                 $extraVariables[$key] = $value;
             }
@@ -379,6 +478,32 @@ EOT;
         }
 
         return $keys;
+    }
+
+    /**
+     * True when $value is exactly an unresolved template placeholder, e.g. "$WebsiteURL".
+     */
+    protected static function isUnresolvedPlaceholder(string $value): bool
+    {
+        if (preg_match('/^\$(\w+)$/', trim($value), $matches) !== 1) {
+            return false;
+        }
+
+        return in_array($matches[1], self::getKnownPlaceholderNames(), true);
+    }
+
+    /**
+     * All placeholder names that may appear in the template.
+     *
+     * @return list<string>
+     */
+    protected static function getKnownPlaceholderNames(): array
+    {
+        return array_values(array_unique(array_merge(
+            self::YAML_VARIABLES,
+            array_values(self::ENV_TO_TEMPLATE_MAP),
+            ['DomainName']
+        )));
     }
 
     protected static function stripWrappingQuotes(string $value): string
